@@ -1,6 +1,85 @@
-<main>
-  <h1 class="hero-text">
-    <span class="brand-tribute">BuonGesto</span>
-    <span class="tagline">Somewhere to build upon.</span>
-  </h1>
-</main>
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buongesto — Landing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@300&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: #F5F5F3; /* Grigio chiarissimo quasi bianco (vibe Apple/Gallery) */
+            color: #1A1A1A; /* Nero morbido per non affaticare troppo */
+            font-family: 'Cormorant Garamond', serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        h1 {
+            font-weight: 300;
+            font-size: clamp(2.5rem, 10vw, 5rem);
+            letter-spacing: -0.03em;
+            margin-bottom: 5px;
+            text-transform: lowercase; /* Brutalism tipico */
+            opacity: 0;
+        }
+
+        p {
+            font-family: 'Inter', sans-serif; /* Sans per contrasto tecnico */
+            font-size: clamp(0.8rem, 2vw, 1rem);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #666;
+            opacity: 0;
+        }
+
+        /* Linea decorativa minimale */
+        .line {
+            width: 0%;
+            height: 1px;
+            background-color: #1A1A1A;
+            margin: 20px auto;
+            opacity: 0.2;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 id="title">buongesto</h1>
+        <div id="line" class="line"></div>
+        <p id="tagline">somewhere to build upon</p>
+    </div>
+
+    <script>
+        const tl = gsap.timeline({ defaults: { ease: "expo.out", duration: 2.5 } });
+
+        tl.to("#title", {
+            opacity: 1,
+            y: 0,
+            startAt: { y: 40 },
+            delay: 0.3
+        })
+        .to("#line", {
+            width: "60px",
+            duration: 1.5
+        }, "-=1.8")
+        .to("#tagline", {
+            opacity: 1,
+            y: 0,
+            startAt: { y: 10 },
+        }, "-=1.5");
+    </script>
+</body>
+</html>
