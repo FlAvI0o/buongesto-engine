@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WebGLCanvas } from '@/components/WebGL/WebGLCanvas';
 import { LiveDonationFeed } from '@/components/WebGL/LiveDonationFeed';
@@ -7,20 +7,56 @@ import type { Campaign, CampaignBlock, DonationTransaction } from '@/types/campa
 import { generateGridPositions } from '@/utils/gridGeometry';
 
 const Engine: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'home' | 'live' | 'campaigns' | 'leaderboards'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'live' | 'campaigns' | 'leaderboards'>('live');
   const [currentCampaign, setCurrentCampaign] = useState<Campaign | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<CampaignBlock | null>(null);
   const [hoveredBlock, setHoveredBlock] = useState<CampaignBlock | null>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([]);
   const [blockColors, setBlockColors] = useState<Record<string, string>>({});
   const [boughtBlocks, setBoughtBlocks] = useState<Record<string, string>>({});
+  const [selectedMessages, setSelectedMessages] = useState<Record<string, string>>({});
+  const [donorName, setDonorName] = useState('You');
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'crypto' | 'bank'>('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [donations, setDonations] = useState<DonationTransaction[]>([]);
 
-  const selectedBlockObjects = currentCampaign?.blocks.filter((block) => selectedBlocks.includes(block.id)) || [];
+  const fullGridBlocks = useMemo(() => {
+    if (!currentCampaign) return [];
+
+    const positions = generateGridPositions(currentCampaign.gridShape, currentCampaign.gridSize);
+    return positions.map((position) => {
+      const ownedBlock = currentCampaign.blocks.find(
+        (block) => block.gridX === position.gridX && block.gridY === position.gridY
+      );
+
+      if (ownedBlock) {
+        return {
+          ...ownedBlock,
+          x: position.x,
+          y: position.y,
+          z: position.z,
+        };
+      }
+
+      return {
+        id: `open-${position.gridX}-${position.gridY}`,
+        x: position.x,
+        y: position.y,
+        z: position.z,
+        color: '#d9d9d9',
+        owner: 'Available',
+        message: 'Claim this spot with a message',
+        amount: 120,
+        timestamp: Date.now(),
+        gridX: position.gridX,
+        gridY: position.gridY,
+      } as CampaignBlock;
+    });
+  }, [currentCampaign]);
+
+  const selectedBlockObjects = fullGridBlocks.filter((block) => selectedBlocks.includes(block.id));
   const purchaseTotal = selectedBlockObjects.reduce((sum, block) => sum + block.amount, 0);
 
   // Initialize with first campaign
@@ -30,45 +66,64 @@ const Engine: React.FC = () => {
     }
   }, []);
 
-  const handleToggleSelect = (block: CampaignBlock) => {
+  const handleToggleSelect = useCallback((block: CampaignBlock) => {
     setSelectedBlock((prev) => (prev?.id === block.id ? null : block));
+
+    if (block.owner !== 'Available') {
+      return;
+    }
+
     setSelectedBlocks((prev) => {
       const active = prev.includes(block.id);
       if (active) {
+        setSelectedMessages((messages) => {
+          const updated = { ...messages };
+          delete updated[block.id];
+          return updated;
+        });
         return prev.filter((id) => id !== block.id);
       }
       return [...prev, block.id];
     });
+
     setBlockColors((prev) => ({
       ...prev,
       [block.id]: prev[block.id] ?? block.color,
     }));
-  };
+  }, []);
 
-  const handleColorChange = (blockId: string, color: string) => {
+  const handleColorChange = useCallback((blockId: string, color: string) => {
     setBlockColors((prev) => ({ ...prev, [blockId]: color }));
-  };
+  }, []);
 
-  const openPurchaseModal = () => {
+  const handleMessageChange = useCallback((blockId: string, message: string) => {
+    setSelectedMessages((prev) => ({ ...prev, [blockId]: message }));
+  }, []);
+
+  const openPurchaseModal = useCallback(() => {
     setPurchaseModalOpen(true);
     setReceipt(null);
-  };
+  }, []);
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = useCallback(() => {
     if (!selectedBlockObjects.length || !currentCampaign) return;
 
     setIsProcessing(true);
     setTimeout(() => {
-      const newDonations: DonationTransaction[] = selectedBlockObjects.map((block) => ({
-        id: Math.random().toString(36),
-        campaignId: currentCampaign!.id,
-        amount: block.amount,
-        color: blockColors[block.id] ?? block.color,
-        donor: block.owner,
-        message: block.message,
-        timestamp: Date.now(),
-        paymentMethod,
-      }));
+      const donor = donorName.trim() || 'You';
+      const newDonations: DonationTransaction[] = selectedBlockObjects.map((block) => {
+        const finalMessage = selectedMessages[block.id] ?? block.message;
+        return {
+          id: Math.random().toString(36),
+          campaignId: currentCampaign!.id,
+          amount: block.amount,
+          color: blockColors[block.id] ?? block.color,
+          donor,
+          message: finalMessage,
+          timestamp: Date.now(),
+          paymentMethod,
+        };
+      });
 
       setDonations((prev) => [...prev, ...newDonations]);
 
@@ -79,6 +134,7 @@ const Engine: React.FC = () => {
 
       setBoughtBlocks((prev) => ({ ...prev, ...purchased }));
       setSelectedBlocks([]);
+      setSelectedMessages({});
       setSelectedBlock(null);
       setIsProcessing(false);
       setReceipt(
@@ -88,11 +144,17 @@ const Engine: React.FC = () => {
       // Update campaign
       let updatedCampaign = currentCampaign;
       selectedBlockObjects.forEach((block) => {
-        updatedCampaign = addBlockToCampaign(updatedCampaign, block);
+        const finalMessage = selectedMessages[block.id] ?? block.message;
+        const purchasedBlock = {
+          ...block,
+          owner: donor,
+          message: finalMessage,
+        } as CampaignBlock;
+        updatedCampaign = addBlockToCampaign(updatedCampaign, purchasedBlock);
       });
       setCurrentCampaign(updatedCampaign);
     }, 900);
-  };
+  }, [selectedBlockObjects, currentCampaign, blockColors, selectedMessages, paymentMethod, donorName]);
 
   const HomeView = () => (
     <div className="flex flex-col justify-between min-h-[calc(100vh-80px)]">
@@ -138,7 +200,7 @@ const Engine: React.FC = () => {
   const LiveCanvasView = () => (
     <div className="h-[calc(100vh-80px)] w-full relative overflow-hidden flex items-center justify-center">
       {currentCampaign && <WebGLCanvas 
-        blocks={currentCampaign.blocks}
+        blocks={fullGridBlocks}
         gridShape={currentCampaign.gridShape}
         gridSize={currentCampaign.gridSize}
         brandColor={currentCampaign.brandColor}
@@ -181,7 +243,10 @@ const Engine: React.FC = () => {
             Purchase {selectedBlocks.length > 0 ? selectedBlocks.length : ''}
           </button>
           <button
-            onClick={() => setSelectedBlocks([])}
+            onClick={() => {
+              setSelectedBlocks([]);
+              setSelectedMessages({});
+            }}
             disabled={!selectedBlocks.length}
             className="rounded-full border-2 border-gray-300 px-4 py-2 text-[10px] uppercase tracking-widest transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-gray-600"
           >
@@ -265,7 +330,7 @@ const Engine: React.FC = () => {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="w-full max-w-3xl rounded-3xl border-2 bg-white p-8 shadow-2xl"
+              className="w-full max-w-3xl rounded-3xl border-2 bg-white p-8 shadow-2xl max-h-[80vh] overflow-y-auto"
               style={{ borderColor: currentCampaign?.brandColor }}
             >
               <div className="flex items-center justify-between mb-6">
@@ -306,20 +371,29 @@ const Engine: React.FC = () => {
                       <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-gray-600 mb-3">Selected Blocks ({selectedBlockObjects.length})</p>
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {selectedBlockObjects.map((block) => (
-                          <div key={block.id} className="flex items-center justify-between gap-3 rounded-lg bg-white p-3 border border-gray-200">
-                            <div>
-                              <p className="text-[11px] font-semibold">{block.owner}</p>
-                              <p className="text-[10px] text-gray-500">"{block.message}"</p>
+                          <div key={block.id} className="rounded-lg bg-white p-3 border border-gray-200">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                              <div>
+                                <p className="text-[11px] font-semibold">{block.owner}</p>
+                                <p className="text-[10px] text-gray-500">"{block.message}"</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-mono text-[12px] font-bold">€{block.amount}</p>
+                                <input
+                                  type="color"
+                                  value={blockColors[block.id] ?? block.color}
+                                  onChange={(e) => handleColorChange(block.id, e.target.value)}
+                                  className="w-8 h-8 rounded cursor-pointer border border-gray-300"
+                                />
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-mono text-[12px] font-bold">€{block.amount}</p>
-                              <input
-                                type="color"
-                                value={blockColors[block.id] ?? block.color}
-                                onChange={(e) => handleColorChange(block.id, e.target.value)}
-                                className="w-8 h-8 rounded cursor-pointer border border-gray-300"
-                              />
-                            </div>
+                            <textarea
+                              value={selectedMessages[block.id] ?? block.message}
+                              onChange={(e) => handleMessageChange(block.id, e.target.value)}
+                              placeholder="Leave your message for this piece"
+                              className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              rows={3}
+                            />
                           </div>
                         ))}
                       </div>
@@ -327,6 +401,16 @@ const Engine: React.FC = () => {
 
                     {/* Payment Method Section */}
                     <div className="rounded-2xl border-2 border-gray-200 bg-gray-50 p-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-gray-600 mb-3">Your Details</p>
+                      <div className="mb-4">
+                        <label className="block text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-2">Name</label>
+                        <input
+                          value={donorName}
+                          onChange={(e) => setDonorName(e.target.value)}
+                          placeholder="Enter your name"
+                          className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/10"
+                        />
+                      </div>
                       <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-gray-600 mb-3">Payment Method</p>
                       <div className="space-y-2 mb-6">
                         {[

@@ -1,5 +1,4 @@
-import { Campaign } from '@/types/campaign';
-import { GridShape } from '@/types/campaign';
+import type { Campaign, GridShape } from '@/types/campaign';
 
 /**
  * Campaign Builder - Easy campaign configuration

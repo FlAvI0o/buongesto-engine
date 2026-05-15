@@ -1,4 +1,4 @@
-import { GridShape } from '@/types/campaign';
+import type { GridShape } from '@/types/campaign';
 
 interface GridPosition {
   gridX: number;

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import Footer from "../Footer.js";
-import initBackground from "../Background/HomeBackground.js";
+// background renderer disabled to avoid WebGL context conflicts with main canvas
 import Lenis from "lenis";
 
 type PageLayoutProps = {
@@ -27,22 +27,16 @@ export function PageLayout({ children, className = "" }: PageLayoutProps) {
     }
     requestAnimationFrame(raf);
 
-    // 2. INIZIALIZZAZIONE DEL BACKGROUND 3D
-    const cleanup = initBackground() as unknown as (() => void) | null;
-    
+    // 2. Background renderer disabled (no cleanup needed)
     return () => { 
       // Pulizia quando si cambia pagina per evitare memory leak
       lenis.destroy();
-      if (typeof cleanup === "function") cleanup(); 
     };
   }, []);
 
   return (
     <div className={`relative min-h-screen ${className}`}>
-      <canvas
-        id="deckforge-bg"
-        className="fixed inset-0 w-screen h-screen z-[-1] pointer-events-none contrast-105" 
-      />
+      {/* background canvas removed to prevent WebGL context conflicts */}
       <main>
         {children}
       </main>

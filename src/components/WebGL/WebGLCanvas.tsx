@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { CampaignBlock, GridShape } from '@/types/campaign';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type { CampaignBlock, GridShape } from '@/types/campaign';
 import { generateGridPositions, gridToWorldCoordinates } from '@/utils/gridGeometry';
 
 interface WebGLCanvasProps {
@@ -29,14 +30,29 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
   const cameraRef = useRef<THREE.Camera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const blockMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
+  const baseZsRef = useRef<number[]>([]);
+  const [hoveredLocal, setHoveredLocal] = useState<CampaignBlock | null>(null);
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
   const gridPositionsRef = useRef<ReturnType<typeof generateGridPositions>>([]);
-  const animationFrameRef = useRef<number>();
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
+  const clickCallbackRef = useRef(onBlockClick);
+  const hoverCallbackRef = useRef(onBlockHover);
+  const isInitializingRef = useRef(false);
+  const lastHoveredIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    if (isInitializingRef.current || sceneRef.current) {
+      console.log('[WebGLCanvas] skipping init (already initializing or initialized)');
+      return;
+    }
+    isInitializingRef.current = true;
+
+    console.log('[WebGLCanvas] init effect', { blocksLength: blocks.length, gridShape, gridSize });
 
     // Scene setup
     const scene = new THREE.Scene();
@@ -44,19 +60,47 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(
-      75,
+      60,
       containerRef.current.clientWidth / containerRef.current.clientHeight,
       0.1,
       1000
     );
-    camera.position.z = 80;
+    const cameraDistance = Math.max(40, gridSize * 6);
+    camera.position.set(cameraDistance, cameraDistance * 0.9, cameraDistance * 0.7);
+    camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    console.log('[WebGLCanvas] camera pos', camera.position.x, camera.position.y, camera.position.z, 'distance', cameraDistance);
+
+    // create (or reuse) a dedicated canvas for this renderer to avoid context clashes
+    let canvas = containerRef.current.querySelector('#buongesto-webgl') as HTMLCanvasElement | null;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.id = 'buongesto-webgl';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.display = 'block';
+      containerRef.current.appendChild(canvas);
+    }
+
+    const _ctx = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | WebGL2RenderingContext | null;
+    const context = (_ctx ?? undefined) as unknown as WebGLRenderingContext | undefined;
+    const renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true, alpha: true });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // ensure canvas drawing buffer matches DPR-scaled size
+    canvas.width = Math.floor(containerRef.current.clientWidth * dpr);
+    canvas.height = Math.floor(containerRef.current.clientHeight * dpr);
+    renderer.setPixelRatio(dpr);
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowShadowMap;
-    containerRef.current.appendChild(renderer.domElement);
+    // Force an opaque clear color for debugging so we can see if the renderer draws
+    renderer.setClearColor(new THREE.Color(0xf0f0f0), 1);
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.zIndex = '0';
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    // renderer.domElement is the same as `canvas` we appended above; no need to append again
     rendererRef.current = renderer;
 
     // Lighting
@@ -70,35 +114,53 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
     directionalLight.shadow.mapSize.height = 2048;
     scene.add(directionalLight);
 
+    // debug helpers removed for production; keep logs for verification
+
     // Grid positions
     gridPositionsRef.current = generateGridPositions(gridShape, gridSize);
 
+    // Orbit controls - tuned for smoothness
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.12;
+    controls.enablePan = true;
+    controls.minDistance = 20;
+    controls.maxDistance = 250;
+    controls.rotateSpeed = 0.6;
+    controls.zoomSpeed = 0.9;
+    controls.panSpeed = 0.6;
+    controls.target.set(0, 0, 0);
+    controls.update();
+    controlsRef.current = controls;
+
     // Create block meshes
     const createBlockMesh = (block: CampaignBlock, position: any) => {
+      const isAvailable = block.owner === 'Available';
       const color = boughtBlocks[block.id] || block.color;
-      const geometry = new THREE.BoxGeometry(2.8, 2.8, 1.5);
+      const geometry = new THREE.BoxGeometry(2.8, 2.8, isAvailable ? 0.9 : 1.5);
       const material = new THREE.MeshPhongMaterial({
         color: new THREE.Color(color),
         shininess: 100,
-        emissive: new THREE.Color(color),
-        emissiveIntensity: 0.2,
+        emissive: new THREE.Color(isAvailable ? 0xcccccc : color),
+        emissiveIntensity: isAvailable ? 0.05 : 0.2,
+        transparent: isAvailable,
+        opacity: isAvailable ? 0.65 : 1,
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.position.set(position.x, position.y, position.z);
-      mesh.userData = { blockId: block.id, originalColor: color };
+      mesh.userData = {
+        blockId: block.id,
+        originalColor: color,
+        baseZ: position.z,
+        isAvailable,
+      };
       return mesh;
     };
 
-    blocks.forEach((block) => {
-      const position = gridToWorldCoordinates(block.gridX, block.gridY, gridPositionsRef.current);
-      if (position) {
-        const mesh = createBlockMesh(block, position);
-        scene.add(mesh);
-        blockMeshesRef.current.set(block.id, mesh);
-      }
-    });
+    // initial meshes are created/updated in a separate effect to avoid
+    // re-creating the entire scene when props like handlers change
 
     // Particle system
     const particleCount = 100;
@@ -123,35 +185,32 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
     scene.add(particles);
     particlesRef.current = particles;
 
-    // Mouse interaction
+    // Mouse interaction (raycast against instanced mesh)
     const onMouseMove = (event: MouseEvent) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
       raycasterRef.current.setFromCamera(mouseRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(scene.children);
-
+      const instMesh = instancedMeshRef.current;
+      if (!instMesh) return;
+      const intersects = raycasterRef.current.intersectObject(instMesh, false);
       let hoveredBlock: CampaignBlock | null = null;
-
-      blockMeshesRef.current.forEach((mesh) => {
-        const isIntersecting = intersects.some((int) => int.object === mesh);
-
-        if (isIntersecting) {
-          mesh.scale.set(1.1, 1.1, 1.1);
-          const material = mesh.material as THREE.MeshPhongMaterial;
-          material.emissiveIntensity = 0.4;
-          hoveredBlock = blocks.find((b) => b.id === mesh.userData.blockId) || null;
-        } else {
-          mesh.scale.set(1, 1, 1);
-          const material = mesh.material as THREE.MeshPhongMaterial;
-          material.emissiveIntensity = 0.2;
+      if (intersects.length) {
+        const instId = intersects[0].instanceId ?? -1;
+        if (instId >= 0 && blocks[instId]) {
+          hoveredBlock = blocks[instId];
+          // set local hovered state (no parent updates to avoid re-renders)
+          if (lastHoveredIdRef.current !== hoveredBlock.id) {
+            lastHoveredIdRef.current = hoveredBlock.id;
+            setHoveredLocal(hoveredBlock);
+          }
         }
-      });
-
-      if (hoveredBlock) {
-        onBlockHover(hoveredBlock);
+      } else {
+        if (lastHoveredIdRef.current !== null) {
+          lastHoveredIdRef.current = null;
+          setHoveredLocal(null);
+        }
       }
     };
 
@@ -162,17 +221,25 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycasterRef.current.setFromCamera(mouseRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(scene.children);
+      const intersects = raycasterRef.current.intersectObjects(Array.from(blockMeshesRef.current.values()));
 
-      for (const intersection of intersects) {
-        const mesh = intersection.object as THREE.Mesh;
-        const blockId = mesh.userData.blockId;
-        if (blockId) {
-          const block = blocks.find((b) => b.id === blockId);
-          if (block) {
-            onBlockClick(block);
+      // click: raycast against instanced mesh and forward the block to parent
+      const instMesh = instancedMeshRef.current;
+      if (instMesh) {
+        const intersects = raycasterRef.current.intersectObject(instMesh, false);
+        for (const intersection of intersects) {
+          const instId = intersection.instanceId ?? -1;
+          if (instId >= 0) {
+            const block = blocks[instId];
+            if (block) {
+              try {
+                clickCallbackRef.current?.(block);
+              } catch (e) {
+                console.error('[WebGLCanvas] click callback error', e);
+              }
+            }
+            break;
           }
-          break;
         }
       }
     };
@@ -186,32 +253,48 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
       animationFrameRef.current = requestAnimationFrame(animate);
       time += 0.016;
 
-      // Rotate and float blocks
-      blockMeshesRef.current.forEach((mesh, blockId) => {
-        mesh.rotation.x += 0.001;
-        mesh.rotation.y += 0.002;
-
-        const isSelected = blockId === selectedBlockId;
-        if (isSelected) {
-          mesh.position.z += Math.sin(time * 3) * 0.02;
+      // Animate instanced mesh per-instance bobbing
+      const instMesh = instancedMeshRef.current;
+      if (instMesh) {
+        const dummy = new THREE.Object3D();
+        for (let i = 0; i < (instMesh.count || blocks.length); i++) {
+          const pos = gridToWorldCoordinates(blocks[i].gridX, blocks[i].gridY, gridPositionsRef.current);
+          if (!pos) continue;
+          const baseZ = baseZsRef.current[i] ?? pos.z;
+          const bob = (selectedBlockId === blocks[i].id) ? 0.8 + Math.sin(time * 4) * 0.2 : Math.sin(time * 2 + i) * 0.18;
+          dummy.position.set(pos.x, pos.y, baseZ + bob);
+          dummy.rotation.set(0.0015 * time, 0.0025 * time, 0);
+          dummy.updateMatrix();
+          instMesh.setMatrixAt(i, dummy.matrix);
         }
-      });
-
-      // Rotate particles
-      if (particlesRef.current) {
-        particlesRef.current.rotation.x += 0.0001;
-        particlesRef.current.rotation.y += 0.0002;
+        instMesh.instanceMatrix.needsUpdate = true;
       }
 
-      // Subtle camera movement
-      camera.position.x = Math.sin(time * 0.3) * 5;
-      camera.position.y = Math.cos(time * 0.25) * 5;
-      camera.lookAt(0, 0, 0);
+      // Rotate particles with life-like drift
+      if (particlesRef.current) {
+        particlesRef.current.rotation.x += 0.0003;
+        particlesRef.current.rotation.y += 0.0005;
+        particlesRef.current.rotation.z += 0.00015;
+      }
 
+      // Smooth controls and subtle animation
+      controlsRef.current?.update();
       renderer.render(scene, camera);
     };
 
     animate();
+
+    try {
+      const gl = renderer.getContext();
+      console.log('[WebGLCanvas] GL VENDOR/RENDERER', gl.getParameter(gl.VENDOR), gl.getParameter(gl.RENDERER));
+      console.log('[WebGLCanvas] GL VERSION', gl.getParameter(gl.VERSION));
+      console.log('[WebGLCanvas] renderer.info', renderer.info);
+      const size = new THREE.Vector2();
+      renderer.getSize(size);
+      console.log('[WebGLCanvas] renderer size', size.x, size.y, 'canvas dims', renderer.domElement.width, renderer.domElement.height, 'css', renderer.domElement.clientWidth, renderer.domElement.clientHeight);
+    } catch (e) {
+      console.warn('[WebGLCanvas] cannot read GL information', e);
+    }
 
     // Handle resize
     const onResize = () => {
@@ -229,15 +312,96 @@ export const WebGLCanvas: React.FC<WebGLCanvasProps> = ({
       window.removeEventListener('resize', onResize);
       containerRef.current?.removeEventListener('mousemove', onMouseMove);
       containerRef.current?.removeEventListener('click', onMouseClick);
+      controls.dispose();
 
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
 
+      console.log('[WebGLCanvas] cleanup -- disposing renderer and removing canvas');
       renderer.dispose();
-      containerRef.current?.removeChild(renderer.domElement);
+      try {
+        containerRef.current?.removeChild(renderer.domElement);
+      } catch (e) {
+        // ignore
+      }
+      // clear refs so future mounts can initialize cleanly
+      sceneRef.current = null;
+      cameraRef.current = null;
+      rendererRef.current = null;
+      controlsRef.current = null;
+      isInitializingRef.current = false;
     };
-  }, [blocks, gridShape, gridSize, brandColor, boughtBlocks, selectedBlockId, onBlockClick, onBlockHover]);
+    }, [gridShape, gridSize, brandColor]);
+
+  // keep callback refs up to date without re-creating the scene
+  useEffect(() => {
+    clickCallbackRef.current = onBlockClick;
+    hoverCallbackRef.current = onBlockHover;
+  }, [onBlockClick, onBlockHover]);
+
+  // incrementally create / update / remove meshes when blocks or boughtBlocks change
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const existing = new Set(blockMeshesRef.current.keys());
+
+    // switch to instanced mesh representation
+    let instMesh = instancedMeshRef.current;
+    const count = blocks.length;
+    if (!instMesh || instMesh.count !== count) {
+      // dispose old
+      if (instMesh) {
+        scene.remove(instMesh);
+        instMesh.geometry.dispose();
+        // @ts-ignore
+        if (instMesh.material) instMesh.material.dispose();
+      }
+
+      const geometry = new THREE.BoxGeometry(3.6, 3.6, 1.8);
+      const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+      instMesh = new THREE.InstancedMesh(geometry, material, count);
+      instMesh.frustumCulled = false;
+      instancedMeshRef.current = instMesh;
+      scene.add(instMesh);
+      baseZsRef.current = new Array(count).fill(0);
+    }
+
+    // fill instances
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < count; i++) {
+      const block = blocks[i];
+      const pos = gridToWorldCoordinates(block.gridX, block.gridY, gridPositionsRef.current);
+      if (!pos) continue;
+      baseZsRef.current[i] = pos.z;
+      dummy.position.set(pos.x, pos.y, pos.z);
+      dummy.updateMatrix();
+      instMesh.setMatrixAt(i, dummy.matrix);
+      const color = new THREE.Color(boughtBlocks[block.id] || block.color);
+      // setColorAt exists on newer three versions
+      // @ts-ignore
+      if (instMesh.setColorAt) instMesh.setColorAt(i, color);
+    }
+    instMesh.instanceMatrix.needsUpdate = true;
+    // @ts-ignore
+    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
+
+    // remove leftover meshes
+    existing.forEach((id) => {
+      const mesh = blockMeshesRef.current.get(id);
+      if (mesh) {
+        scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        // @ts-ignore
+        if (mesh.material) mesh.material.dispose();
+        blockMeshesRef.current.delete(id);
+      }
+    });
+
+    console.log('[WebGLCanvas] mesh update, instanced count:', blocks.length);
+
+  }, [blocks, boughtBlocks]);
 
   return (
     <div

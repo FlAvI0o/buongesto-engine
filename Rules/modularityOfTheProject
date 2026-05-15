@@ -1,0 +1,8 @@
+Modular parts of the project
+Engine.tsx – main purchase/dashboard interaction
+WebGLCanvas.tsx – 3D canvas rendering
+LiveDonationFeed.tsx – donation feed panel
+gridGeometry.ts – grid generation logic
+campaigns.ts – campaign sample data
+src/components/Dna/Layouts/* – layout wrappers used by pages
+App.tsx – routes and page wiring

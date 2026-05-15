@@ -1,0 +1,16 @@
+How the canvas is generated
+gridGeometry.ts
+
+contains generateGridPositions(shape, gridSize)
+supports shapes like hexagon, spiral, circle, wave, organic, square
+returns 3D positions for each grid cell
+WebGLCanvas.tsx
+
+creates a Three.js scene
+places a mesh at each position returned by the generator
+matches purchased blocks by gridX/gridY
+renders owned blocks and available slots in the same scene
+Engine.tsx
+
+merges campaign-owned blocks with empty grid slots
+handles selection, purchase modal, color choice, and messages

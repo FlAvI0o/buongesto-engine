@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 export type GridShape = 'hexagon' | 'spiral' | 'circle' | 'square' | 'wave' | 'organic';
 export type PaymentMethod = 'card' | 'crypto' | 'bank';
 
