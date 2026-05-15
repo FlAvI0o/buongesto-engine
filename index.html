@@ -1,85 +1,32 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buongesto — Landing</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@300&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+    <title>Buongesto</title>
+    
+    <link rel="icon" type="image/png" href="assets/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="shortcut icon" href="assets/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="buongesto" />
+    <link rel="manifest" href="assets/site.webmanifest" />
 
-        body {
-            background-color: #F5F5F3; /* Grigio chiarissimo quasi bianco (vibe Apple/Gallery) */
-            color: #1A1A1A; /* Nero morbido per non affaticare troppo */
-            font-family: 'Cormorant Garamond', serif;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .container {
-            text-align: center;
-            padding: 40px;
-        }
-
-        h1 {
-            font-weight: 300;
-            font-size: clamp(2.5rem, 10vw, 5rem);
-            letter-spacing: -0.03em;
-            margin-bottom: 5px;
-            text-transform: lowercase; /* Brutalism tipico */
-            opacity: 0;
-        }
-
-        p {
-            font-family: 'Inter', sans-serif; /* Sans per contrasto tecnico */
-            font-size: clamp(0.8rem, 2vw, 1rem);
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #666;
-            opacity: 0;
-        }
-
-        /* Linea decorativa minimale */
-        .line {
-            width: 0%;
-            height: 1px;
-            background-color: #1A1A1A;
-            margin: 20px auto;
-            opacity: 0.2;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <h1 id="title">buongesto</h1>
-        <div id="line" class="line"></div>
-        <p id="tagline">somewhere to build upon</p>
-    </div>
-
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  
     <script>
-        const tl = gsap.timeline({ defaults: { ease: "expo.out", duration: 2.5 } });
-
-        tl.to("#title", {
-            opacity: 1,
-            y: 0,
-            startAt: { y: 40 },
-            delay: 0.3
-        })
-        .to("#line", {
-            width: "60px",
-            duration: 1.5
-        }, "-=1.8")
-        .to("#tagline", {
-            opacity: 1,
-            y: 0,
-            startAt: { y: 10 },
-        }, "-=1.5");
+      // Gestisce solo la classe
+      document.fonts.ready.then(() => {
+        document.documentElement.classList.add('fonts-loaded');
+      });
     </script>
+</head>
+
+<body class="bg-transparent">
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

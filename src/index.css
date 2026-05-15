@@ -1,0 +1,82 @@
+/* --- Il tuo codice originale inizia qui --- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Logica di caricamento Bianco su Bianco per Buongesto */
+/* --- SBLOCCO DELLO SCROLL E RIMOZIONE DELLA SCROLLBAR --- */
+/* --- LOGICA DI BASE E SCROLLBAR INVISIBILE --- */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: transparent !important; 
+  /* ASSICURATI DI NON AVERE "overflow: hidden;" QUI, USA QUESTO: */
+  overflow-x: hidden; 
+}
+
+/* Uccide la scrollbar su Chrome, Safari, Edge e Opera */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Uccide la scrollbar su Firefox e vecchi browser */
+html, body {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;     /* Firefox */
+}
+
+/* ... lascia il resto del tuo CSS (html.fonts-loaded, ecc) intatto ... */
+html.fonts-loaded { 
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 1.2s ease-in-out;
+}
+
+
+
+/* Buongesto Motion Layer */
+@layer utilities {
+  .df-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition-property: opacity, transform;
+    transition-duration: 1000ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  
+
+
+  
+  .df-reveal-active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Variant: subtle */
+  .df-reveal-subtle {
+    opacity: 0;
+    transform: translateY(15px);
+    transition: all 800ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .df-reveal-subtle-active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+
+
+  .df-magnetic-container {
+    height: 100vh;
+    overflow-y: auto;
+    scroll-snap-type: y proximity;
+    scroll-behavior: smooth;
+  }
+
+  .df-magnetic-section {
+    scroll-snap-align: center;
+    scroll-snap-stop: normal;
+  }
+}
